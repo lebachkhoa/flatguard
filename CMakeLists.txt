@@ -25,7 +25,7 @@ target_include_directories(test_auditor PRIVATE src third_party)
 
 enable_testing()
 
-# Tự động tải Google Test ổn định
+# Google Test
 include(FetchContent)
 FetchContent_Declare(
     googletest
