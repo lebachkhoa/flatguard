@@ -1,0 +1,38 @@
+# Build directories
+build/
+out/
+cmake-build-*/
+
+# Compiled binaries
+flatguard
+test_parser
+test_auditor
+*.o
+*.a
+*.so
+*.out
+*.exe
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+install_manifest.txt
+_deps/
+
+# Testing
+Testing/
+
+# Windows Zone Identifier (created when downloading files on Windows)
+*Zone.Identifier
+*:Zone.Identifier
+
+# IDE / editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
