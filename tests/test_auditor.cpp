@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-// App không có permission nào -> không có issue
+// Test case: Ensure no issues are reported when an app has no permissions
 TEST(AuditorTests, NoIssuesWhenNoPermissions) {
     AppPermissions app;
     app.appId = "com.example.clean";
@@ -12,7 +12,7 @@ TEST(AuditorTests, NoIssuesWhenNoPermissions) {
     EXPECT_TRUE(issues.empty());
 }
 
-// App có "all" trong devices -> phát hiện DEV_01 CRITICAL
+// Test case: Detect full device access (devices=all) -> triggers DEV_01 CRITICAL
 TEST(AuditorTests, DetectsFullDeviceAccess) {
     AppPermissions app;
     app.appId = "com.example.dangerous";
@@ -32,7 +32,7 @@ TEST(AuditorTests, DetectsFullDeviceAccess) {
     EXPECT_TRUE(foundDev01);
 }
 
-// App có "home" trong filesystems -> phát hiện FS_01 INFO (nguy hiểm nhưng chưa đủ nguy hiểm một mình)
+// Test case: Detect home directory access (filesystems=home) -> triggers FS_01 INFO
 TEST(AuditorTests, DetectsHomeAccess) {
     AppPermissions app;
     app.appId = "com.example.homeaccess";
@@ -49,7 +49,7 @@ TEST(AuditorTests, DetectsHomeAccess) {
     EXPECT_TRUE(foundFs01);
 }
 
-// App có "network" trong shared -> NET_01 luôn là INFO
+// Test case: Detect network access (shared=network) -> triggers NET_01 INFO
 TEST(AuditorTests, DetectsNetworkAccess) {
     AppPermissions app;
     app.appId = "com.example.browser";
@@ -66,7 +66,7 @@ TEST(AuditorTests, DetectsNetworkAccess) {
     EXPECT_TRUE(foundNet01);
 }
 
-// COMBO_01: network + home -> có thể exfiltrate file cá nhân
+// COMBO_01: Network + Home access -> potential data exfiltration of user files
 TEST(AuditorTests, ComboNetworkPlusHome) {
     AppPermissions app;
     app.appId = "com.example.combo01";
@@ -84,7 +84,7 @@ TEST(AuditorTests, ComboNetworkPlusHome) {
     EXPECT_TRUE(foundCombo01);
 }
 
-// COMBO_02: network + host -> có thể exfiltrate toàn bộ hệ thống
+// COMBO_02: Network + Host filesystem access -> potential full system compromise
 TEST(AuditorTests, ComboNetworkPlusHost) {
     AppPermissions app;
     app.appId = "com.example.combo02";
@@ -102,7 +102,7 @@ TEST(AuditorTests, ComboNetworkPlusHost) {
     EXPECT_TRUE(foundCombo02);
 }
 
-// COMBO_03: network + x11 -> keylog và gửi về server
+// COMBO_03: Network + X11 socket -> risk of keylogging and remote data transmission
 TEST(AuditorTests, ComboNetworkPlusX11) {
     AppPermissions app;
     app.appId = "com.example.combo03";
@@ -120,7 +120,7 @@ TEST(AuditorTests, ComboNetworkPlusX11) {
     EXPECT_TRUE(foundCombo03);
 }
 
-// COMBO_04: network + devices=all -> stream webcam/microphone ra ngoài
+// COMBO_04: Network + All devices -> risk of webcam/microphone streaming
 TEST(AuditorTests, ComboNetworkPlusDevices) {
     AppPermissions app;
     app.appId = "com.example.combo04";
@@ -138,7 +138,7 @@ TEST(AuditorTests, ComboNetworkPlusDevices) {
     EXPECT_TRUE(foundCombo04);
 }
 
-// Network một mình không kích hoạt combo rule nào
+// Ensure standalone network permission does not trigger any combo rules
 TEST(AuditorTests, NetworkAloneNoCombos) {
     AppPermissions app;
     app.appId = "com.example.netonly";
@@ -147,12 +147,12 @@ TEST(AuditorTests, NetworkAloneNoCombos) {
     auto issues = Auditor::auditApp(app);
     for (const auto& issue : issues) {
         std::string id = issue.ruleId;
-        EXPECT_EQ(id.substr(0, 5), "NET_0")  // chỉ được phép có NET_01
+        EXPECT_EQ(id.substr(0, 5), "NET_0")
             << "Unexpected rule triggered: " << id;
     }
 }
 
-// auditAll trả về tổng hợp issues của nhiều app
+// Test auditAll: Aggregate issues from multiple applications
 TEST(AuditorTests, AuditAllMultipleApps) {
     AppPermissions app1;
     app1.appId = "com.example.one";
