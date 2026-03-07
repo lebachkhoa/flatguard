@@ -6,38 +6,14 @@
  */
 
 #include <iostream>
-#include <sstream>
 #include <cstdlib>
 #include <filesystem>
 #include "parser.h"
-#include "SimpleIni.h"
+#include "../../third_party/SimpleIni.h"
+#include "../utils/ini_utils.h"
+#include "override.h"
 
-// Flatpak metadata stores list values as semicolon-separated tokens.
-static std::string trim(const std::string& s)
-{
-    const std::string whitespace = " \t\n\r\f\v";
-    const auto start = s.find_first_not_of(whitespace);
-    if(start == std::string::npos) return "";
-
-    const auto end = s.find_last_not_of(whitespace);
-    const auto range = end - start + 1;
-    return s.substr(start, range);
-}
-
-static std::vector<std::string> splitBySemicolon(const std::string& str)
-{
-    std::vector<std::string> result;
-    std::istringstream stream(str);
-    std::string token;
-    while (std::getline(stream, token, ';')) {
-        std::string t = trim(token);
-        if (!t.empty())
-            result.push_back(t);
-    }
-    return result;
-}
-
-AppPermissions FlatpakParser::parseMetadata(const std::string& path)
+AppPermissions FlatpakParser::parseMetadata(const std::filesystem::path& path)
 {
     AppPermissions permissions;
 
@@ -51,65 +27,53 @@ AppPermissions FlatpakParser::parseMetadata(const std::string& path)
 
     permissions.appId = ini.GetValue(SECTION_APPLICATION, KEY_NAME, "unknown");
 
-    auto readList = [&](const char* section, const char* key,
-                        std::vector<std::string>& out) -> bool {
-        const char* value = ini.GetValue(section, key, nullptr);
-        if (!value)
-            return false;
-        out = splitBySemicolon(value);
-        return true;
-    };
-
-    readList(SECTION_CONTEXT, KEY_SHARED, permissions.shared);
-    readList(SECTION_CONTEXT, KEY_SOCKETS, permissions.sockets);
-    readList(SECTION_CONTEXT, KEY_DEVICES, permissions.devices);
-    readList(SECTION_CONTEXT, KEY_FILESYSTEMS, permissions.filesystems);
+    parsePermissionsFromIni(ini, permissions);
 
     return permissions;
 }
 
-std::vector<AppPermissions> FlatpakParser::scanSystem() 
+std::vector<AppPermissions> FlatpakParser::scanSystem()
 {
-   std::string userPath;
+    std::filesystem::path userPath;
 
-   const char* xdgData = std::getenv("XDG_DATA_HOME");
-   if(xdgData != nullptr && std::string(xdgData) != "") {
-      userPath = std::string(xdgData) + "/flatpak/app/";
-      std::cout << "Detected custom XDG path.\n";
-   } else {
-      const char* homeDir = std::getenv("HOME");   
-      if(homeDir != nullptr) {
-         userPath = std::string(homeDir) + "/.local/share/flatpak/app/";
-      } else {
-         std::cerr << "Error: Could not find HOME directory.\n";
-      }
-   }
-   
-   std::string systemPath = "/var/lib/flatpak/app/";
-   std::vector<AppPermissions> allApps;
+    const char* xdgData = std::getenv("XDG_DATA_HOME");
+    if (xdgData != nullptr && std::string(xdgData) != "") {
+        userPath = std::filesystem::path(xdgData) / "flatpak" / "app";
+    } else {
+        const char* homeDir = std::getenv("HOME");
+        if (homeDir != nullptr) {
+            userPath = std::filesystem::path(homeDir) / ".local" / "share" / "flatpak" / "app";
+        } else {
+            std::cerr << "Error: Could not find HOME directory.\n";
+        }
+    }
 
-   for (const auto& basePath : std::initializer_list<std::string>{ systemPath, userPath }) 
-   {
-      if (!std::filesystem::exists(basePath)) continue;
+    std::filesystem::path systemPath = "/var/lib/flatpak/app";
+    std::vector<AppPermissions> allApps;
 
-      try
-      {
-         for (const auto& appDir : std::filesystem::directory_iterator(basePath)) 
-         {
-            std::filesystem::path metadataPath = appDir.path() / "current/active/metadata";
+    for (const auto& basePath : std::initializer_list<std::filesystem::path>{ systemPath, userPath })
+    {
+        if (!std::filesystem::exists(basePath)) continue;
 
-            if (std::filesystem::exists(metadataPath)) 
+        try
+        {
+            for (const auto& appDir : std::filesystem::directory_iterator(basePath))
             {
-               AppPermissions appPerms = parseMetadata(metadataPath.string());
-               allApps.push_back(appPerms);
-            }
-         }
-      }
-      catch(const std::exception& e)
-      {
-         std::cerr << "Error parsing metadata: " << basePath << " - " << e.what() << '\n';
-      }
-   }
+                std::filesystem::path metadataPath = appDir.path() / "current/active/metadata";
 
-   return allApps;
+                if (std::filesystem::exists(metadataPath))
+                {
+                    AppPermissions appPerms = parseMetadata(metadataPath);
+                    applyOverrides(appPerms, appDir.path());
+                    allApps.push_back(appPerms);
+                }
+            }
+        }
+        catch (const std::exception& e)
+        {
+            std::cerr << "Error parsing metadata: " << basePath << " - " << e.what() << '\n';
+        }
+    }
+
+    return allApps;
 }

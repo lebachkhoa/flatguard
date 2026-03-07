@@ -44,17 +44,6 @@ static std::string joinOrNone(const std::vector<std::string>& v, const std::stri
     return out;
 }
 
-// Build a display-ready graphics list from raw sockets
-static std::vector<std::string> graphicsFromSockets(const std::vector<std::string>& sockets)
-{
-    std::vector<std::string> gfx;
-    for (const auto& s : sockets) {
-        if (s == "x11")     gfx.push_back("X11");
-        if (s == "wayland") gfx.push_back("Wayland");
-    }
-    return gfx;
-}
-
 // Escape special characters for JSON strings
 static std::string jsonEscape(const std::string& s)
 {
@@ -86,26 +75,30 @@ void printAuditIssuesJson(const std::vector<AppPermissions>& apps,
             if (issue.appId == app.appId)
                 appIssues.push_back(&issue);
 
-        bool hasNet    = std::find(app.shared.begin(),  app.shared.end(),  "network") != app.shared.end();
-        bool hasAllDev = std::find(app.devices.begin(), app.devices.end(), "all")     != app.devices.end();
-        auto gfx       = graphicsFromSockets(app.sockets);
+        bool hasAllDev = std::find(app.devices.begin(), app.devices.end(), "all") != app.devices.end();
 
         std::cout << "  {\n";
         std::cout << "    \"appId\": \""       << jsonEscape(app.appId) << "\",\n";
 
         // permissions object
         std::cout << "    \"permissions\": {\n";
-        std::cout << "      \"network\": \"" << (hasNet ? "Enabled" : "None") << "\",\n";
 
-        std::cout << "      \"graphics\": [";
-        for (size_t gi = 0; gi < gfx.size(); ++gi) {
-            if (gi) std::cout << ", ";
-            std::cout << "\"" << gfx[gi] << "\"";
+        std::cout << "      \"shared\": [";
+        for (size_t si = 0; si < app.shared.size(); ++si) {
+            if (si) std::cout << ", ";
+            std::cout << "\"" << jsonEscape(app.shared[si]) << "\"";
+        }
+        std::cout << "],\n";
+
+        std::cout << "      \"sockets\": [";
+        for (size_t si = 0; si < app.sockets.size(); ++si) {
+            if (si) std::cout << ", ";
+            std::cout << "\"" << jsonEscape(app.sockets[si]) << "\"";
         }
         std::cout << "],\n";
 
         if (hasAllDev) {
-            std::cout << "      \"devices\": \"All Hardware\",\n";
+            std::cout << "      \"devices\": \"all\",\n";
         } else {
             std::cout << "      \"devices\": [";
             for (size_t di = 0; di < app.devices.size(); ++di) {
@@ -159,23 +152,21 @@ void printAuditIssues(const std::vector<AppPermissions>& apps,
             if (issue.appId == app.appId)
                 appIssues.push_back(&issue);
 
-        bool hasNet    = std::find(app.shared.begin(),  app.shared.end(),  "network") != app.shared.end();
-        bool hasAllDev = std::find(app.devices.begin(), app.devices.end(), "all")     != app.devices.end();
-        auto gfx       = graphicsFromSockets(app.sockets);
-        std::string devStr  = hasAllDev ? "All Hardware (Webcam, Mic, etc.)" : joinOrNone(app.devices);
+        bool hasAllDev = std::find(app.devices.begin(), app.devices.end(), "all") != app.devices.end();
+        std::string devStr   = hasAllDev ? "all" : joinOrNone(app.devices);
         std::string filesStr = joinOrNone(app.filesystems);
 
         // ── Header ─────────────────────────────────────────────────────────
-        std::cout << SEP << "\n";
+        std::cout << "\n";
         std::cout << BOLD << "Application: " << app.appId << RESET << "\n";
         std::cout << SEP << "\n";
 
         // ── Permissions Summary ────────────────────────────────────────────
         std::cout << "[+] Permissions Summary:\n";
-        std::cout << "    - Network:  " << (hasNet ? "Enabled" : "None") << "\n";
-        std::cout << "    - Graphics: " << joinOrNone(gfx) << "\n";
-        std::cout << "    - Devices:  " << devStr << "\n";
-        std::cout << "    - Files:    " << filesStr << "\n";
+        std::cout << "    - Shared:   " << joinOrNone(app.shared)      << "\n";
+        std::cout << "    - Sockets:  " << joinOrNone(app.sockets)     << "\n";
+        std::cout << "    - Devices:  " << devStr                      << "\n";
+        std::cout << "    - Files:    " << filesStr                    << "\n";
 
         // ── Security Findings ─────────────────────────────────────────────
         std::cout << "\n[!] Security Findings:\n";
@@ -226,13 +217,23 @@ int main(int argc, char* argv[])
         return 1;
     }
 
+    const auto& unmatched = result.unmatched();
+    if (!unmatched.empty()) {
+        std::cerr << RED << "Error: unrecognized argument(s):";
+        for (const auto& u : unmatched) std::cerr << " '" << u << "'";
+        std::cerr << RESET << std::endl;
+        std::cerr << "Did you mean: " << BOLD << "--audit " << unmatched.back() << RESET << " ?" << std::endl;
+        std::cout << options.help() << std::endl;
+        return 1;
+    }
+
     if (result.count("help")) {
         std::cout << options.help() << std::endl;
         return 0;
     }
 
     if (result.count("version")) {
-        std::cout << "flatguard v0.1.0" << std::endl;
+        std::cout << "flatguard v0.1.1" << std::endl;
         return 0;
     }
 

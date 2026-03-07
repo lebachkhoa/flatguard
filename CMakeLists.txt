@@ -1,16 +1,13 @@
-# Copyright (C) 2026 lebachkhoa
-# Flatguard is free software: you can redistribute it and/or modify it under
-# the terms of the GNU General Public License as published by the Free Software Foundation,
-# either version 3 of the License, or (at your option) any later version.
-
 cmake_minimum_required(VERSION 3.10)
-project(Flatguard VERSION 0.1.0 LANGUAGES CXX)
+project(Flatguard VERSION 0.1.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 set(SOURCES
     src/flatpak/parser.cpp
+    src/flatpak/override.cpp
+    src/utils/ini_utils.cpp
     src/audit/auditor.cpp
 )
 
@@ -22,6 +19,9 @@ target_include_directories(test_parser PRIVATE src third_party)
 
 add_executable(test_auditor tests/test_auditor.cpp ${SOURCES})
 target_include_directories(test_auditor PRIVATE src third_party)
+
+add_executable(test_override tests/test_override.cpp ${SOURCES})
+target_include_directories(test_override PRIVATE src third_party)
 
 enable_testing()
 
@@ -40,5 +40,8 @@ add_test(NAME TestParser COMMAND test_parser)
 
 target_link_libraries(test_auditor GTest::gtest_main)
 add_test(NAME TestAuditor COMMAND test_auditor)
+
+target_link_libraries(test_override GTest::gtest_main)
+add_test(NAME TestOverride COMMAND test_override)
 
 install(TARGETS flatguard DESTINATION bin)

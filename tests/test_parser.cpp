@@ -36,7 +36,7 @@ TEST(ParserTests, ParseMetadataShared) {
     std::remove(testFile.c_str());
 }
 
-// Test parseMetadata returns "unknow" when keys are missing
+// Test parseMetadata returns "unknown" when keys are missing
 TEST(ParserTests, ParseMetadataMissingKeys) {
     std::string testFile = "/tmp/test_metadata_empty.ini";
 
