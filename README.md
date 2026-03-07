@@ -15,6 +15,7 @@ A command-line security auditing tool for [Flatpak](https://flatpak.org/) applic
 - [Usage](#usage)
 - [Running Tests](#running-tests)
 - [Example Output](#example-output)
+- [Changelog](#changelog)
 - [License](#license)
 
 ---
@@ -34,8 +35,7 @@ Results are printed to the terminal with color-coded `CRITICAL` / `WARNING` / `I
 
 - Automatically discovers installed Flatpak apps under `$XDG_DATA_HOME/flatpak/app/` or `~/.local/share/flatpak/app/` and `/var/lib/flatpak/app/`
 - Parses INI-style Flatpak `metadata` files using [SimpleIni](https://github.com/brofield/simpleini)
-- **Context-aware auditing**: adjusts rule severity based on whether the permission makes sense for the app's declared purpose
-- Full CLI interface with `--audit`, `--list`, `--help`, `--version`
+- Full CLI interface with `--audit`, `--list`, `--json`, `--help`, `--version`
 - Color-coded output: **RED** for `CRITICAL`, **YELLOW** for `WARNING`, **CYAN** for `INFO`
 - Detects dangerous permission combinations (COMBO_01..COMBO_04) and reports them as `CRITICAL`.
 - Unit-tested with [Google Test](https://github.com/google/googletest)
@@ -73,13 +73,19 @@ flatguard/
 │   ├── color.h                # ANSI color codes for terminal output
 │   ├── flatpak/
 │   │   ├── parser.h           # AppPermissions struct, FlatpakParser declarations
-│   │   └── parser.cpp         # INI metadata parser, system scan
-│   └── audit/
-│       ├── auditor.h          # SecurityRule / AuditIssue structs, built-in rules
-│       └── auditor.cpp        # Context-aware rule-matching logic
+│   │   ├── parser.cpp         # INI metadata parser, system scan
+│   │   ├── override.h         # applyOverrides declaration
+│   │   └── override.cpp       # Applies system/user Flatpak overrides to permissions
+│   ├── audit/
+│   │   ├── auditor.h          # SecurityRule / AuditIssue structs, built-in rules
+│   │   └── auditor.cpp        # Context-aware rule-matching logic
+│   └── utils/
+│       ├── ini_utils.h        # parsePermissionsFromIni declaration
+│       └── ini_utils.cpp      # Shared INI parsing utilities
 ├── tests/
-│   ├── test_parser.cpp        # Unit tests for the metadata parser (4 tests)
-│   └── test_auditor.cpp       # Unit tests for the auditor (10 tests)
+│   ├── test_parser.cpp        # Unit tests for the metadata parser
+│   ├── test_override.cpp      # Unit tests for the override module
+│   └── test_auditor.cpp       # Unit tests for the auditor
 ├── third_party/
 │   ├── SimpleIni.h            # Header-only INI parser
 │   └── cxxopts.hpp            # Header-only CLI argument parser
@@ -117,13 +123,14 @@ cmake ..
 make
 ```
 
-This produces three binaries inside `build/`:
+This produces four binaries inside `build/`:
 
-| Binary         | Description                        |
-|----------------|------------------------------------|
-| `flatguard`    | The main CLI tool                  |
-| `test_parser`  | Unit tests for the parser module   |
-| `test_auditor` | Unit tests for the auditor module  |
+| Binary          | Description                         |
+|-----------------|-------------------------------------|
+| `flatguard`     | The main CLI tool                   |
+| `test_parser`   | Unit tests for the parser module    |
+| `test_override` | Unit tests for the override module  |
+| `test_auditor`  | Unit tests for the auditor module   |
 
 ---
 
@@ -161,11 +168,11 @@ cd build
 ./flatguard --audit all
 
 # Audit a single app by its ID
-./flatguard --audit com.google.Chrome
+./flatguard --audit org.mozilla.firefox
 
 # Output results as JSON (pipe-friendly)
 ./flatguard --json
-./flatguard --audit com.google.Chrome --json
+./flatguard --audit org.mozilla.firefox --json
 
 # List all installed Flatpak apps
 ./flatguard --list
@@ -197,6 +204,7 @@ cd build
 cd build
 
 ./test_parser
+./test_override
 ./test_auditor
 ```
 
@@ -211,9 +219,11 @@ Expected output:
 
 ```
     Start 1: TestParser
-1/2 Test #1: TestParser .......................   Passed    0.00 sec
+1/3 Test #1: TestParser .......................   Passed    0.00 sec
     Start 2: TestAuditor
-2/2 Test #2: TestAuditor ......................   Passed    0.00 sec
+2/3 Test #2: TestAuditor ......................   Passed    0.00 sec
+    Start 3: TestOverride
+3/3 Test #3: TestOverride .....................   Passed    0.00 sec
 ```
 
 ---
@@ -222,14 +232,13 @@ Expected output:
 ```
 $ ./flatguard --audit all
 
---------------------------------------------------
-Application: com.google.Chrome
+Application: org.mozilla.firefox
 --------------------------------------------------
 [+] Permissions Summary:
-    - Network:  Enabled
-    - Graphics: X11, Wayland
-    - Devices:  All Hardware (Webcam, Mic, etc.)
-    - Files:    host-etc, ~/.config/kioslaverc, xdg-music, xdg-pictures, xdg-videos, /run/.heim_org.h5l.kcm-socket, ~/.config/dconf:ro, xdg-download, xdg-run/dconf, xdg-documents, xdg-run/pipewire-0
+    - Shared:   network, ipc
+    - Sockets:  x11, wayland, pulseaudio, fallback-x11, pcsc, cups
+    - Devices:  all
+    - Files:    xdg-config/gtk-3.0:ro, xdg-download, /run/.heim_org.h5l.kcm-socket, xdg-run/speech-dispatcher:ro
 
 [!] Security Findings:
   [CRITICAL] DEV_01: App can access all hardware devices (webcam, etc.)
@@ -238,37 +247,31 @@ Application: com.google.Chrome
   [CRITICAL] COMBO_03: App can capture keystrokes and transmit them remotely.
   [CRITICAL] COMBO_04: App can stream webcam/microphone over the internet.
 --------------------------------------------------
---------------------------------------------------
-Application: org.videolan.VLC
+
+Application: com.github.tchx84.Flatseal
 --------------------------------------------------
 [+] Permissions Summary:
-    - Network:  Enabled
-    - Graphics: X11
-    - Devices:  All Hardware (Webcam, Mic, etc.)
-    - Files:    xdg-config/kdeglobals:ro, host, xdg-run/gvfs
+    - Shared:   ipc
+    - Sockets:  x11, wayland, fallback-x11
+    - Devices:  dri
+    - Files:    xdg-data/flatpak/overrides:create, /var/lib/flatpak/app:ro, xdg-data/flatpak/app:ro
 
 [!] Security Findings:
-  [CRITICAL] DEV_01: App can access all hardware devices (webcam, etc.)
-  [CRITICAL] FS_02: App has access to the entire host OS filesystem.
   [INFO]     SOC_01: X11 protocol is insecure and allows keylogging.
-  [INFO]     NET_01: App can communicate over the internet.
-  [CRITICAL] COMBO_02: App can exfiltrate the entire host filesystem over the internet.
-  [CRITICAL] COMBO_03: App can capture keystrokes and transmit them remotely.
-  [CRITICAL] COMBO_04: App can stream webcam/microphone over the internet.
 --------------------------------------------------
 ```
 
 **JSON output (`--json`):**
 ```json
-$ ./flatguard --audit com.google.Chrome --json
+$ ./flatguard --audit org.mozilla.firefox --json
 [
   {
-    "appId": "com.google.Chrome",
+    "appId": "org.mozilla.firefox",
     "permissions": {
-      "network": "Enabled",
-      "graphics": ["X11", "Wayland"],
-      "devices": "All Hardware",
-      "files": ["host-etc", "~/.config/kioslaverc", "xdg-music", "xdg-pictures", "xdg-videos", "/run/.heim_org.h5l.kcm-socket", "~/.config/dconf:ro", "xdg-download", "xdg-run/dconf", "xdg-documents", "xdg-run/pipewire-0"]
+      "shared": ["network", "ipc"],
+      "sockets": ["x11", "wayland", "pulseaudio", "fallback-x11", "pcsc", "cups"],
+      "devices": "all",
+      "files": ["xdg-config/gtk-3.0:ro", "xdg-download", "/run/.heim_org.h5l.kcm-socket", "xdg-run/speech-dispatcher:ro"]
     },
     "issues": [
       {
@@ -300,6 +303,33 @@ $ ./flatguard --audit com.google.Chrome --json
   }
 ]
 ```
+
+---
+
+## Changelog
+
+### v0.1.1 — 2026-03-08
+
+#### Fixed
+- **Override resolution**: `applyOverrides` now correctly resolves both system-level (`/var/lib/flatpak/overrides/`) and per-user (`$XDG_DATA_HOME/flatpak/overrides/` or `~/.local/share/flatpak/overrides/`) override files, and applies them in the correct order (system first, user second).
+- **Override token handling**: Denial tokens prefixed with `!` (e.g. `!network`) now properly remove the matching permission from the base permission list.
+- **Path handling consistency**: All file path operations now use `std::filesystem::path` throughout the codebase (`parseMetadata`, `scanSystem`, `applyOverrides`), eliminating fragile manual string concatenation.
+- **CLI argument validation**: Passing subcommand-style arguments without `--` (e.g. `flatguard audit <id>`) now emits a clear error with a suggested fix instead of silently auditing all apps.
+
+#### Internal
+- Extracted shared INI parsing logic into `src/utils/ini_utils.cpp`.
+- Added `test_override` unit test binary covering override resolution and token merging.
+
+---
+
+### v0.1.0 — Initial release
+
+- Scan all installed Flatpak apps from system and user paths.
+- Parse INI `metadata` files for permissions (shared, sockets, devices, filesystems).
+- Audit permissions against 6 security rules + 4 combo rules.
+- Color-coded terminal output (`CRITICAL` / `WARNING` / `INFO`).
+- CLI flags: `--audit`, `--list`, `--json`, `--help`, `--version`.
+- Unit tests for parser and auditor modules.
 
 ---
 
