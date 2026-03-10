@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(Flatguard VERSION 0.1.1 LANGUAGES CXX)
+project(Flatguard VERSION 0.2.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(SOURCES
     src/flatpak/parser.cpp
     src/flatpak/override.cpp
+    src/flatpak/fs_permissions.cpp
     src/utils/ini_utils.cpp
     src/audit/auditor.cpp
 )
@@ -22,6 +23,9 @@ target_include_directories(test_auditor PRIVATE src third_party)
 
 add_executable(test_override tests/test_override.cpp ${SOURCES})
 target_include_directories(test_override PRIVATE src third_party)
+
+add_executable(test_fs_permissions tests/test_fs_permissions.cpp ${SOURCES})
+target_include_directories(test_fs_permissions PRIVATE src third_party)
 
 enable_testing()
 
@@ -43,5 +47,8 @@ add_test(NAME TestAuditor COMMAND test_auditor)
 
 target_link_libraries(test_override GTest::gtest_main)
 add_test(NAME TestOverride COMMAND test_override)
+
+target_link_libraries(test_fs_permissions GTest::gtest_main)
+add_test(NAME TestFsPermissions COMMAND test_fs_permissions)
 
 install(TARGETS flatguard DESTINATION bin)

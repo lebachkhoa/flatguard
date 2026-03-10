@@ -44,6 +44,7 @@ static void applyOverrideFile(AppPermissions& permissions, const std::filesystem
     applyList(permissions.sockets, overridePerms.sockets);
     applyList(permissions.devices, overridePerms.devices);
     applyList(permissions.filesystems, overridePerms.filesystems);
+    applyList(permissions.persistent, overridePerms.persistent);
 }
 
 void FlatpakParser::applyOverrides(AppPermissions& permissions, const std::filesystem::path& appPath)

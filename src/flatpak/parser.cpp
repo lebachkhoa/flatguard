@@ -51,26 +51,22 @@ std::vector<AppPermissions> FlatpakParser::scanSystem()
     std::filesystem::path systemPath = "/var/lib/flatpak/app";
     std::vector<AppPermissions> allApps;
 
-    for (const auto& basePath : std::initializer_list<std::filesystem::path>{ systemPath, userPath })
-    {
+    for (const auto& basePath : std::initializer_list<std::filesystem::path>{ systemPath, userPath }) {
         if (!std::filesystem::exists(basePath)) continue;
 
-        try
-        {
+        try {
             for (const auto& appDir : std::filesystem::directory_iterator(basePath))
             {
                 std::filesystem::path metadataPath = appDir.path() / "current/active/metadata";
 
-                if (std::filesystem::exists(metadataPath))
-                {
+                if (std::filesystem::exists(metadataPath)){
                     AppPermissions appPerms = parseMetadata(metadataPath);
                     applyOverrides(appPerms, appDir.path());
                     allApps.push_back(appPerms);
                 }
             }
         }
-        catch (const std::exception& e)
-        {
+        catch (const std::exception& e) {
             std::cerr << "Error parsing metadata: " << basePath << " - " << e.what() << '\n';
         }
     }

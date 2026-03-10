@@ -32,7 +32,7 @@ TEST(AuditorTests, DetectsFullDeviceAccess) {
     EXPECT_TRUE(foundDev01);
 }
 
-// Test case: Detect home directory access (filesystems=home) -> triggers FS_01 INFO
+// Test case: Detect home directory access (filesystems=home) -> triggers FS_01 WARNING
 TEST(AuditorTests, DetectsHomeAccess) {
     AppPermissions app;
     app.appId = "com.example.homeaccess";
@@ -43,7 +43,7 @@ TEST(AuditorTests, DetectsHomeAccess) {
     for (const auto& issue : issues) {
         if (issue.ruleId == "FS_01") {
             foundFs01 = true;
-            EXPECT_EQ(issue.severity, Severity::INFO);
+            EXPECT_EQ(issue.severity, Severity::WARNING);
         }
     }
     EXPECT_TRUE(foundFs01);
@@ -100,6 +100,59 @@ TEST(AuditorTests, ComboNetworkPlusHost) {
         }
     }
     EXPECT_TRUE(foundCombo02);
+}
+
+// host (rw) -> FS_02 must be CRITICAL
+TEST(AuditorTests, HostAccessIsCritical) {
+    AppPermissions app;
+    app.appId = "com.example.host";
+    app.filesystems = {"host"};
+
+    auto issues = Auditor::auditApp(app);
+    bool found = false;
+    for (const auto& issue : issues) {
+        if (issue.ruleId == "FS_02") {
+            found = true;
+            EXPECT_EQ(issue.severity, Severity::CRITICAL);
+        }
+    }
+    EXPECT_TRUE(found);
+}
+
+// host:ro -> FS_02 must be WARNING, description must say "read-only"
+TEST(AuditorTests, HostReadOnlyDowngradesToWarning) {
+    AppPermissions app;
+    app.appId = "com.example.hostro";
+    app.filesystems = {"host:ro"};
+
+    auto issues = Auditor::auditApp(app);
+    bool found = false;
+    for (const auto& issue : issues) {
+        if (issue.ruleId == "FS_02") {
+            found = true;
+            EXPECT_EQ(issue.severity, Severity::WARNING);
+            EXPECT_NE(issue.description.find("read-only"), std::string::npos);
+        }
+    }
+    EXPECT_TRUE(found);
+}
+
+// COMBO_02 with host:ro -> WARNING (not CRITICAL)
+TEST(AuditorTests, ComboNetworkPlusHostReadOnly) {
+    AppPermissions app;
+    app.appId = "com.example.combo02ro";
+    app.shared      = {"network"};
+    app.filesystems = {"host:ro"};
+
+    auto issues = Auditor::auditApp(app);
+    bool found = false;
+    for (const auto& issue : issues) {
+        if (issue.ruleId == "COMBO_02") {
+            found = true;
+            EXPECT_EQ(issue.severity, Severity::WARNING);
+        }
+    }
+    EXPECT_TRUE(found);
 }
 
 // COMBO_03: Network + X11 socket -> risk of keylogging and remote data transmission
@@ -164,6 +217,126 @@ TEST(AuditorTests, AuditAllMultipleApps) {
 
     auto issues = Auditor::auditAll({app1, app2});
     EXPECT_GE(issues.size(), 2u);
+}
+
+// home:ro -> FS_01 stays INFO (read-only home is less severe than read/write)
+TEST(AuditorTests, HomeReadOnlyStaysInfo) {
+    AppPermissions app;
+    app.appId = "com.example.homero";
+    app.filesystems = {"home:ro"};
+
+    auto issues = Auditor::auditApp(app);
+    bool found = false;
+    for (const auto& issue : issues) {
+        if (issue.ruleId == "FS_01") {
+            found = true;
+            EXPECT_EQ(issue.severity, Severity::INFO);
+        }
+    }
+    EXPECT_TRUE(found);
+}
+
+// home:create -> FS_01 must be WARNING (writable)
+TEST(AuditorTests, HomeCreateStaysWarning) {
+    AppPermissions app;
+    app.appId = "com.example.homecreate";
+    app.filesystems = {"home:create"};
+
+    auto issues = Auditor::auditApp(app);
+    bool found = false;
+    for (const auto& issue : issues) {
+        if (issue.ruleId == "FS_01") {
+            found = true;
+            EXPECT_EQ(issue.severity, Severity::WARNING);
+        }
+    }
+    EXPECT_TRUE(found);
+}
+
+// COMBO_01 with home:ro -> WARNING, not CRITICAL
+TEST(AuditorTests, ComboNetworkPlusHomeReadOnly) {
+    AppPermissions app;
+    app.appId = "com.example.combo01ro";
+    app.shared      = {"network"};
+    app.filesystems = {"home:ro"};
+
+    auto issues = Auditor::auditApp(app);
+    bool found = false;
+    for (const auto& issue : issues) {
+        if (issue.ruleId == "COMBO_01") {
+            found = true;
+            EXPECT_EQ(issue.severity, Severity::WARNING);
+        }
+    }
+    EXPECT_TRUE(found);
+}
+
+// PERSIST_01: persistent=. triggers CRITICAL
+TEST(AuditorTests, DetectsPersistentHome) {
+    AppPermissions app;
+    app.appId = "com.example.persist01";
+    app.persistent = {"."};
+
+    auto issues = Auditor::auditApp(app);
+    bool found = false;
+    for (const auto& issue : issues) {
+        if (issue.ruleId == "PERSIST_01") {
+            found = true;
+            EXPECT_EQ(issue.severity, Severity::CRITICAL);
+        }
+    }
+    EXPECT_TRUE(found);
+}
+
+// PERSIST_02: persistent=.config triggers WARNING
+TEST(AuditorTests, DetectsPersistentConfig) {
+    AppPermissions app;
+    app.appId = "com.example.persist02";
+    app.persistent = {".config"};
+
+    auto issues = Auditor::auditApp(app);
+    bool found = false;
+    for (const auto& issue : issues) {
+        if (issue.ruleId == "PERSIST_02") {
+            found = true;
+            EXPECT_EQ(issue.severity, Severity::WARNING);
+        }
+    }
+    EXPECT_TRUE(found);
+}
+
+// PERSIST_03: persistent=.ssh triggers CRITICAL
+TEST(AuditorTests, DetectsPersistentSsh) {
+    AppPermissions app;
+    app.appId = "com.example.persist03";
+    app.persistent = {".ssh"};
+
+    auto issues = Auditor::auditApp(app);
+    bool found = false;
+    for (const auto& issue : issues) {
+        if (issue.ruleId == "PERSIST_03") {
+            found = true;
+            EXPECT_EQ(issue.severity, Severity::CRITICAL);
+        }
+    }
+    EXPECT_TRUE(found);
+}
+
+// PERSIST_04: persistent=.gnupg triggers CRITICAL
+TEST(AuditorTests, DetectsPersistentGnupg) {
+    AppPermissions app;
+    app.appId = "com.example.persist04";
+    app.persistent = {".gnupg"};
+
+    auto issues = Auditor::auditApp(app);
+    bool found = false;
+    for (const auto& issue : issues) {
+        if (issue.ruleId == "PERSIST_04") {
+            found = true;
+            EXPECT_EQ(issue.severity, Severity::CRITICAL);
+        }
+    }
+    EXPECT_TRUE(found);
 }
 
 int main(int argc, char **argv) {

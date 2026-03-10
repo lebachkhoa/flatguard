@@ -72,8 +72,9 @@ void printAuditIssuesJson(const std::vector<AppPermissions>& apps,
         // Collect issues for this app
         std::vector<const AuditIssue*> appIssues;
         for (const auto& issue : allIssues)
-            if (issue.appId == app.appId)
+            if (issue.appId == app.appId) {
                 appIssues.push_back(&issue);
+            }
 
         bool hasAllDev = std::find(app.devices.begin(), app.devices.end(), "all") != app.devices.end();
 
@@ -85,14 +86,18 @@ void printAuditIssuesJson(const std::vector<AppPermissions>& apps,
 
         std::cout << "      \"shared\": [";
         for (size_t si = 0; si < app.shared.size(); ++si) {
-            if (si) std::cout << ", ";
+            if (si) {
+                std::cout << ", ";
+            }
             std::cout << "\"" << jsonEscape(app.shared[si]) << "\"";
         }
         std::cout << "],\n";
 
         std::cout << "      \"sockets\": [";
         for (size_t si = 0; si < app.sockets.size(); ++si) {
-            if (si) std::cout << ", ";
+            if (si) {
+                std::cout << ", ";
+            }
             std::cout << "\"" << jsonEscape(app.sockets[si]) << "\"";
         }
         std::cout << "],\n";
@@ -102,7 +107,9 @@ void printAuditIssuesJson(const std::vector<AppPermissions>& apps,
         } else {
             std::cout << "      \"devices\": [";
             for (size_t di = 0; di < app.devices.size(); ++di) {
-                if (di) std::cout << ", ";
+                if (di) {
+                    std::cout << ", ";
+                }
                 std::cout << "\"" << jsonEscape(app.devices[di]) << "\"";
             }
             std::cout << "],\n";
@@ -110,8 +117,19 @@ void printAuditIssuesJson(const std::vector<AppPermissions>& apps,
 
         std::cout << "      \"files\": [";
         for (size_t fi = 0; fi < app.filesystems.size(); ++fi) {
-            if (fi) std::cout << ", ";
+            if (fi) {
+                std::cout << ", ";
+            }
             std::cout << "\"" << jsonEscape(app.filesystems[fi]) << "\"";
+        }
+        std::cout << "],\n";
+
+        std::cout << "      \"persistent\": [";
+        for (size_t pi = 0; pi < app.persistent.size(); ++pi) {
+            if (pi) {
+                std::cout << ", ";
+            }
+            std::cout << "\"" << jsonEscape(app.persistent[pi]) << "\"";
         }
         std::cout << "]\n";
         std::cout << "    },\n";
@@ -124,19 +142,27 @@ void printAuditIssuesJson(const std::vector<AppPermissions>& apps,
             firstIssue = false;
 
             std::string sev;
-            if      (issue->severity == Severity::CRITICAL) sev = "CRITICAL";
-            else if (issue->severity == Severity::WARNING)   sev = "WARNING";
-            else                                              sev = "INFO";
+            if (issue->severity == Severity::CRITICAL) {
+                sev = "CRITICAL";
+            } else if (issue->severity == Severity::WARNING) {
+                sev = "WARNING";
+            } else {
+                sev = "INFO";
+            }
             std::cout << "      {\n";
             std::cout << "        \"ruleId\": \""      << jsonEscape(issue->ruleId)      << "\",\n";
             std::cout << "        \"severity\": \""    << sev                             << "\",\n";
             std::cout << "        \"description\": \"" << jsonEscape(issue->description) << "\"\n";
             std::cout << "      }";
         }
-        if (!firstIssue) std::cout << "\n";
+        if (!firstIssue) {
+            std::cout << "\n";
+        }
         std::cout << "    ]\n";
         std::cout << "  }";
-        if (ai + 1 < apps.size()) std::cout << ",";
+        if (ai + 1 < apps.size()) {
+            std::cout << ",";
+        }
         std::cout << "\n";
     }
     std::cout << "]\n";
@@ -148,10 +174,11 @@ void printAuditIssues(const std::vector<AppPermissions>& apps,
     for (const auto& app : apps) {
         // Collect issues for this app
         std::vector<const AuditIssue*> appIssues;
-        for (const auto& issue : allIssues)
-            if (issue.appId == app.appId)
+        for (const auto& issue : allIssues) {
+            if (issue.appId == app.appId) {
                 appIssues.push_back(&issue);
-
+            }
+        }
         bool hasAllDev = std::find(app.devices.begin(), app.devices.end(), "all") != app.devices.end();
         std::string devStr   = hasAllDev ? "all" : joinOrNone(app.devices);
         std::string filesStr = joinOrNone(app.filesystems);
@@ -163,10 +190,11 @@ void printAuditIssues(const std::vector<AppPermissions>& apps,
 
         // ── Permissions Summary ────────────────────────────────────────────
         std::cout << "[+] Permissions Summary:\n";
-        std::cout << "    - Shared:   " << joinOrNone(app.shared)      << "\n";
-        std::cout << "    - Sockets:  " << joinOrNone(app.sockets)     << "\n";
-        std::cout << "    - Devices:  " << devStr                      << "\n";
-        std::cout << "    - Files:    " << filesStr                    << "\n";
+        std::cout << "    - Shared:      " << joinOrNone(app.shared)      << "\n";
+        std::cout << "    - Sockets:     " << joinOrNone(app.sockets)     << "\n";
+        std::cout << "    - Devices:     " << devStr                      << "\n";
+        std::cout << "    - Files:       " << filesStr                    << "\n";
+        std::cout << "    - Persistent:  " << joinOrNone(app.persistent)  << "\n";
 
         // ── Security Findings ─────────────────────────────────────────────
         std::cout << "\n[!] Security Findings:\n";
@@ -220,7 +248,9 @@ int main(int argc, char* argv[])
     const auto& unmatched = result.unmatched();
     if (!unmatched.empty()) {
         std::cerr << RED << "Error: unrecognized argument(s):";
-        for (const auto& u : unmatched) std::cerr << " '" << u << "'";
+        for (const auto& u : unmatched) {
+            std::cerr << " '" << u << "'";
+        }
         std::cerr << RESET << std::endl;
         std::cerr << "Did you mean: " << BOLD << "--audit " << unmatched.back() << RESET << " ?" << std::endl;
         std::cout << options.help() << std::endl;
@@ -233,7 +263,7 @@ int main(int argc, char* argv[])
     }
 
     if (result.count("version")) {
-        std::cout << "flatguard v0.1.1" << std::endl;
+        std::cout << "flatguard v0.2.0" << std::endl;
         return 0;
     }
 
