@@ -40,15 +40,15 @@ namespace Auditor
     inline const std::vector<SecurityRule> securityRules = {
         {
             "DEV_01", "Full Device Access", "devices", "all", 
-            Severity::CRITICAL, "App can access all hardware devices (webcam, etc.)"
+            Severity::CRITICAL, "App has full access to all hardware devices (webcam, etc.)"
         },
         {
             "FS_01", "Home Access", "filesystems", "home", 
-            Severity::INFO, "App can read/write your entire personal home directory."
+            Severity::WARNING, "App has read/write access to your entire home directory."
         },
         {
             "FS_02", "Host Filesystem Access", "filesystems", "host", 
-            Severity::CRITICAL, "App has access to the entire host OS filesystem."
+            Severity::CRITICAL, "App has full read/write access to the entire host OS filesystem."
         },
         {
             "SOC_01", "X11 Risk", "sockets", "x11", 
@@ -56,12 +56,28 @@ namespace Auditor
         },
         {
             "NET_01", "Network Access", "shared", "network", 
-            Severity::INFO, "App can communicate over the internet."
+            Severity::INFO, "App has full network access."
         },
         {
             "DBUS_01", "D-Bus Session Access", "sockets", "session-bus", 
-            Severity::WARNING, "App can talk to other apps, potential sandbox escape."
-        }
+            Severity::WARNING, "App has full access to D-Bus session, potential sandbox escape."
+        },
+        {
+            "PERSIST_01", "Full Home Persistence", "persistent", ".",
+            Severity::CRITICAL, "App has full persistence of entire home directory outside sandbox."
+        },
+        {
+            "PERSIST_02", "Config Directory Persistence", "persistent", ".config",
+            Severity::WARNING, "App has full persistence of all configuration files outside sandbox."
+        },
+        {
+            "PERSIST_03", "SSH Keys Persistence",  "persistent", ".ssh", 
+            Severity::CRITICAL, "App has full persistence of SSH keys."
+        },
+        {
+            "PERSIST_04", "GPG Keys Persistence",  "persistent", ".gnupg", 
+            Severity::CRITICAL, "App has full persistence of GPG keys."
+        },
     };
 
     std::vector<AuditIssue> auditApp(const AppPermissions& app);

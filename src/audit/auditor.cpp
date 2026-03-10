@@ -6,16 +6,45 @@
  */
 
 #include "auditor.h"
-#include <iostream>
+#include "flatpak/fs_permissions.h"
 #include <algorithm>
 
 std::vector<AuditIssue> Auditor::auditApp(const AppPermissions& app)
 {
     std::vector<AuditIssue> issues;
 
-    // Helper: check if a permission list contains a given value
+    // Helper: check if a plain permission list contains a given value
     auto contains = [](const std::vector<std::string>& v, const std::string& val) {
         return std::find(v.begin(), v.end(), val) != v.end();
+    };
+
+    // Parse filesystem entries into structured FsPermission objects so that
+    // entries like "home:ro" are correctly matched by path regardless of suffix.
+    const std::vector<FsPermission> fsParsed =
+        FlatpakParser::parseFilesystemPermissions(app.filesystems);
+
+    // Helper: check if any parsed filesystem entry has a given path (no suffix, read-write).
+    auto containsFsPath = [&](const std::string& path) {
+        return std::any_of(fsParsed.begin(), fsParsed.end(),
+            [&](const FsPermission& p) {
+                return p.path == path && p.fsaccess == FsAccess::ReadWrite;
+            });
+    };
+
+    // Helper: check if any parsed filesystem entry has a given path with :create access.
+    auto containsFsPathCreatable = [&](const std::string& path) {
+        return std::any_of(fsParsed.begin(), fsParsed.end(),
+            [&](const FsPermission& p) {
+                return p.path == path && p.fsaccess == FsAccess::Create;
+            });
+    };
+
+    // Helper: check if any parsed filesystem entry has a given path with :ro access.
+    auto containsFsPathReadOnly = [&](const std::string& path) {
+        return std::any_of(fsParsed.begin(), fsParsed.end(),
+            [&](const FsPermission& p) {
+                return p.path == path && p.fsaccess == FsAccess::ReadOnly;
+            });
     };
 
     // ── Single-permission rules ──────────────────────────────────────────────
@@ -24,32 +53,61 @@ std::vector<AuditIssue> Auditor::auditApp(const AppPermissions& app)
         const auto& field   = rule.target_field;
         const auto& pattern = rule.pattern;
 
-        const std::vector<std::string>* list = nullptr;
-        if      (field == "devices")     list = &app.devices;
-        else if (field == "filesystems") list = &app.filesystems;
-        else if (field == "sockets")     list = &app.sockets;
-        else if (field == "shared")      list = &app.shared;
+        bool matched = false;
+        if (field == "devices") {
+            matched = contains(app.devices, pattern);
+        } else if (field == "sockets") {
+            matched = contains(app.sockets, pattern);
+        } else if (field == "shared") {
+            matched = contains(app.shared, pattern);
+        } else if (field == "filesystems") {
+            matched = containsFsPath(pattern) || containsFsPathCreatable(pattern) || containsFsPathReadOnly(pattern);
+        } else if (field == "persistent") {
+            matched = contains(app.persistent, pattern);
+        }
 
-        if (!list) continue;
-        if (!contains(*list, pattern)) continue;
+        if (!matched) continue;
 
-        issues.push_back({app.appId, rule.id, rule.severity, rule.description});
+        // Adjust severity and description when filesystem access is read-only:
+        // downgrade one level (CRITICAL→WARNING, WARNING→INFO).
+        // Only applies when there is no rw/create entry for the same path.
+        Severity sev = rule.severity;
+        std::string desc = rule.description;
+        if (field == "filesystems" && rule.severity > Severity::INFO
+                && containsFsPathReadOnly(pattern)
+                && !containsFsPath(pattern) && !containsFsPathCreatable(pattern)) {
+            sev = (rule.severity == Severity::CRITICAL) ? Severity::WARNING : Severity::INFO;
+            // Replace "read/write" wording with "read-only" in the description.
+            const std::string rw = "read/write";
+            auto pos = desc.find(rw);
+            if (pos != std::string::npos)
+                desc.replace(pos, rw.size(), "read-only");
+        }
+
+        issues.push_back({app.appId, rule.id, sev, desc});
     }
 
     // ── Combo rules: dangerous permission combinations ───────────────────────
-    bool hasNetwork = contains(app.shared,      "network");
-    bool hasHome    = contains(app.filesystems, "home");
-    bool hasHost    = contains(app.filesystems, "host");
-    bool hasX11     = contains(app.sockets,     "x11");
-    bool hasDevices = contains(app.devices,     "all");
+    bool hasNetwork  = contains(app.shared,  "network");
+    bool hasHome     = containsFsPath("home") || containsFsPathCreatable("home") || containsFsPathReadOnly("home");
+    bool hasHost     = containsFsPath("host") || containsFsPathCreatable("host") || containsFsPathReadOnly("host");
+    bool hasX11      = contains(app.sockets, "x11");
+    bool hasDevices  = contains(app.devices, "all");
 
-    if (hasNetwork && hasHome)
-        issues.push_back({app.appId, "COMBO_01", Severity::CRITICAL,
+    // Combo is CRITICAL only when home/host has write access (ro is still bad but less so).
+    if (hasNetwork && hasHome) {
+        bool writable = containsFsPath("home") || containsFsPathCreatable("home");
+        Severity sev = writable ? Severity::CRITICAL : Severity::WARNING;
+        issues.push_back({app.appId, "COMBO_01", sev,
             "App can exfiltrate personal files over the internet."});
+    }
 
-    if (hasNetwork && hasHost)
-        issues.push_back({app.appId, "COMBO_02", Severity::CRITICAL,
+    if (hasNetwork && hasHost) {
+        bool writable = containsFsPath("host") || containsFsPathCreatable("host");
+        Severity sev = writable ? Severity::CRITICAL : Severity::WARNING;
+        issues.push_back({app.appId, "COMBO_02", sev,
             "App can exfiltrate the entire host filesystem over the internet."});
+    }
 
     if (hasNetwork && hasX11)
         issues.push_back({app.appId, "COMBO_03", Severity::CRITICAL,

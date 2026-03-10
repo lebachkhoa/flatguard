@@ -13,24 +13,26 @@
 
 struct AppPermissions
 {
-    std::string appId;
-    std::vector<std::string> shared;
-    std::vector<std::string> sockets;
-    std::vector<std::string> devices;
-    std::vector<std::string> filesystems;
+   std::string appId;
+   std::vector<std::string> shared;
+   std::vector<std::string> sockets;
+   std::vector<std::string> devices;
+   std::vector<std::string> filesystems;
+   std::vector<std::string> persistent;
 };
 
 namespace FlatpakParser
 {
-    inline constexpr const char* SECTION_APPLICATION   = "Application";
-    inline constexpr const char* KEY_NAME              = "name";
+   inline constexpr const char* SECTION_APPLICATION   = "Application";
+   inline constexpr const char* KEY_NAME              = "name";
 
-    inline constexpr const char* SECTION_CONTEXT       = "Context";
-    inline constexpr const char* KEY_SHARED            = "shared";
-    inline constexpr const char* KEY_SOCKETS           = "sockets";
-    inline constexpr const char* KEY_DEVICES           = "devices";
-    inline constexpr const char* KEY_FILESYSTEMS       = "filesystems";
-
-    AppPermissions parseMetadata(const std::filesystem::path& path);
-    std::vector<AppPermissions> scanSystem();
+   inline constexpr const char* SECTION_CONTEXT       = "Context";
+   inline constexpr const char* KEY_SHARED            = "shared";
+   inline constexpr const char* KEY_SOCKETS           = "sockets";
+   inline constexpr const char* KEY_DEVICES           = "devices";
+   inline constexpr const char* KEY_FILESYSTEMS       = "filesystems";
+   inline constexpr const char* KEY_PERSISTENT        = "persistent";
+   
+   AppPermissions parseMetadata(const std::filesystem::path& path);
+   std::vector<AppPermissions> scanSystem();
 };

@@ -54,4 +54,5 @@ void FlatpakParser::parsePermissionsFromIni(CSimpleIniA& ini, AppPermissions& pe
     readList(SECTION_CONTEXT, KEY_SOCKETS, perm.sockets);
     readList(SECTION_CONTEXT, KEY_DEVICES, perm.devices);
     readList(SECTION_CONTEXT, KEY_FILESYSTEMS, perm.filesystems);
+    readList(SECTION_CONTEXT, KEY_PERSISTENT, perm.persistent);
 }

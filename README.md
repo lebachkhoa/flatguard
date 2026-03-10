@@ -44,23 +44,42 @@ Results are printed to the terminal with color-coded `CRITICAL` / `WARNING` / `I
 
 ## Security Rules
 
-| Rule ID | Default Severity | Permission Checked    | Description                                                   |
-|---------|------------------|-----------------------|---------------------------------------------------------------|
-| DEV_01  | CRITICAL         | `devices=all`         | App can access all hardware devices (webcam, microphone, etc.)|
-| FS_01   | INFO             | `filesystems=home`    | App can read and write your personal home directory           |
-| FS_02   | CRITICAL         | `filesystems=host`    | App has access to the entire host OS filesystem               |
-| SOC_01  | INFO             | `sockets=x11`         | X11 protocol is insecure and allows keylogging                |
-| NET_01  | INFO             | `shared=network`      | App can communicate over the internet                         |
-| DBUS_01 | WARNING          | `sockets=session-bus` | App can talk to other apps — potential sandbox escape         |
+| Rule ID    | Default Severity | Permission Checked      | Description                                                         |
+|------------|------------------|-------------------------|---------------------------------------------------------------------|
+| DEV_01     | CRITICAL         | `devices=all`           | App can access all hardware devices (webcam, microphone, etc.)      |
+| FS_01      | WARNING          | `filesystems=home`      | App has read/write access to your entire home directory             |
+| FS_02      | CRITICAL         | `filesystems=host`      | App has full read/write access to the entire host OS filesystem     |
+| SOC_01     | INFO             | `sockets=x11`           | X11 protocol is insecure and allows keylogging                      |
+| NET_01     | INFO             | `shared=network`        | App can communicate over the internet                               |
+| DBUS_01    | WARNING          | `sockets=session-bus`   | App can talk to other apps — potential sandbox escape               |
+| PERSIST_01 | CRITICAL         | `persistent=.`          | App persists the entire home directory outside the sandbox          |
+| PERSIST_02 | WARNING          | `persistent=.config`    | App persists all configuration files outside the sandbox            |
+| PERSIST_03 | CRITICAL         | `persistent=.ssh`       | App persists SSH keys outside the sandbox                           |
+| PERSIST_04 | CRITICAL         | `persistent=.gnupg`     | App persists GPG keys outside the sandbox                           |
+
+### Filesystem access-mode severity
+
+Flatpak filesystem entries can carry an optional access modifier (`:ro`, `:create`). Flatguard adjusts severity accordingly:
+
+| Entry | Rule severity |
+|---|---|
+| `home` / `home:create` | WARNING |
+| `home:ro` | INFO (downgraded one level) |
+| `host` / `host:create` | CRITICAL |
+| `host:ro` | WARNING (downgraded one level) |
 
 ### Combo (risk) rules
 
-Flatguard also detects dangerous permission *combinations* that greatly increase risk. These "combo" rules are reported as `CRITICAL`:
+Flatguard also detects dangerous permission *combinations*. Severity depends on whether filesystem access is writable:
 
-- `COMBO_01`: `network + home` — App can exfiltrate personal files over the internet.
-- `COMBO_02`: `network + host` — App can exfiltrate the entire host filesystem.
-- `COMBO_03`: `network + x11` — App can capture keystrokes (keylogging) and transmit them remotely.
-- `COMBO_04`: `network + devices=all` — App can stream webcam/microphone over the internet.
+| Rule     | Permissions               | Writable | Severity   |
+|----------|---------------------------|----------|------------|
+| COMBO_01 | `network + home`          | yes      | CRITICAL   |
+| COMBO_01 | `network + home:ro`       | no       | WARNING    |
+| COMBO_02 | `network + host`          | yes      | CRITICAL   |
+| COMBO_02 | `network + host:ro`       | no       | WARNING    |
+| COMBO_03 | `network + x11`           | —        | CRITICAL   |
+| COMBO_04 | `network + devices=all`   | —        | CRITICAL   |
 
 ---
 
@@ -75,7 +94,9 @@ flatguard/
 │   │   ├── parser.h           # AppPermissions struct, FlatpakParser declarations
 │   │   ├── parser.cpp         # INI metadata parser, system scan
 │   │   ├── override.h         # applyOverrides declaration
-│   │   └── override.cpp       # Applies system/user Flatpak overrides to permissions
+│   │   ├── override.cpp       # Applies system/user Flatpak overrides to permissions
+│   │   ├── fs_permissions.h   # FsPermission struct, FsAccess enum
+│   │   └── fs_permissions.cpp # Structured filesystem permission parser
 │   ├── audit/
 │   │   ├── auditor.h          # SecurityRule / AuditIssue structs, built-in rules
 │   │   └── auditor.cpp        # Context-aware rule-matching logic
@@ -85,7 +106,8 @@ flatguard/
 ├── tests/
 │   ├── test_parser.cpp        # Unit tests for the metadata parser
 │   ├── test_override.cpp      # Unit tests for the override module
-│   └── test_auditor.cpp       # Unit tests for the auditor
+│   ├── test_auditor.cpp       # Unit tests for the auditor
+│   └── test_fs_permissions.cpp# Unit tests for the filesystem permission parser
 ├── third_party/
 │   ├── SimpleIni.h            # Header-only INI parser
 │   └── cxxopts.hpp            # Header-only CLI argument parser
@@ -123,14 +145,15 @@ cmake ..
 make
 ```
 
-This produces four binaries inside `build/`:
+This produces five binaries inside `build/`:
 
-| Binary          | Description                         |
-|-----------------|-------------------------------------|
-| `flatguard`     | The main CLI tool                   |
-| `test_parser`   | Unit tests for the parser module    |
-| `test_override` | Unit tests for the override module  |
-| `test_auditor`  | Unit tests for the auditor module   |
+| Binary                 | Description                                      |
+|------------------------|--------------------------------------------------|
+| `flatguard`            | The main CLI tool                                |
+| `test_parser`          | Unit tests for the parser module                 |
+| `test_override`        | Unit tests for the override module               |
+| `test_auditor`         | Unit tests for the auditor module                |
+| `test_fs_permissions`  | Unit tests for the filesystem permission parser  |
 
 ---
 
@@ -206,6 +229,7 @@ cd build
 ./test_parser
 ./test_override
 ./test_auditor
+./test_fs_permissions
 ```
 
 Or using CTest:
@@ -219,11 +243,17 @@ Expected output:
 
 ```
     Start 1: TestParser
-1/3 Test #1: TestParser .......................   Passed    0.00 sec
+1/4 Test #1: TestParser .......................   Passed    0.00 sec
     Start 2: TestAuditor
-2/3 Test #2: TestAuditor ......................   Passed    0.00 sec
+2/4 Test #2: TestAuditor ......................   Passed    0.00 sec
     Start 3: TestOverride
-3/3 Test #3: TestOverride .....................   Passed    0.00 sec
+3/4 Test #3: TestOverride .....................   Passed    0.01 sec
+    Start 4: TestFsPermissions
+4/4 Test #4: TestFsPermissions ................   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 4
+
+Total Test time (real) =   0.02 sec
 ```
 
 ---
@@ -235,15 +265,18 @@ $ ./flatguard --audit all
 Application: org.mozilla.firefox
 --------------------------------------------------
 [+] Permissions Summary:
-    - Shared:   network, ipc
-    - Sockets:  x11, wayland, pulseaudio, fallback-x11, pcsc, cups
-    - Devices:  all
-    - Files:    xdg-config/gtk-3.0:ro, xdg-download, /run/.heim_org.h5l.kcm-socket, xdg-run/speech-dispatcher:ro
+    - Shared:      network, ipc
+    - Sockets:     x11, wayland, pulseaudio, fallback-x11, pcsc, cups
+    - Devices:     all
+    - Files:       xdg-config/gtk-3.0:ro, xdg-download, /run/.heim_org.h5l.kcm-socket, xdg-run/speech-dispatcher:ro, home:ro
+    - Persistent:  .mozilla
 
 [!] Security Findings:
-  [CRITICAL] DEV_01: App can access all hardware devices (webcam, etc.)
+  [CRITICAL] DEV_01: App has full access to all hardware devices (webcam, etc.)
+  [INFO]     FS_01: App has read-only access to your entire home directory.
   [INFO]     SOC_01: X11 protocol is insecure and allows keylogging.
-  [INFO]     NET_01: App can communicate over the internet.
+  [INFO]     NET_01: App has full network access.
+  [WARNING]  COMBO_01: App can exfiltrate personal files over the internet.
   [CRITICAL] COMBO_03: App can capture keystrokes and transmit them remotely.
   [CRITICAL] COMBO_04: App can stream webcam/microphone over the internet.
 --------------------------------------------------
@@ -251,10 +284,11 @@ Application: org.mozilla.firefox
 Application: com.github.tchx84.Flatseal
 --------------------------------------------------
 [+] Permissions Summary:
-    - Shared:   ipc
-    - Sockets:  x11, wayland, fallback-x11
-    - Devices:  dri
-    - Files:    xdg-data/flatpak/overrides:create, /var/lib/flatpak/app:ro, xdg-data/flatpak/app:ro
+    - Shared:      ipc
+    - Sockets:     x11, wayland, fallback-x11
+    - Devices:     dri
+    - Files:       xdg-data/flatpak/overrides:create, /var/lib/flatpak/app:ro, xdg-data/flatpak/app:ro
+    - Persistent:  None
 
 [!] Security Findings:
   [INFO]     SOC_01: X11 protocol is insecure and allows keylogging.
@@ -263,7 +297,7 @@ Application: com.github.tchx84.Flatseal
 
 **JSON output (`--json`):**
 ```json
-$ ./flatguard --audit org.mozilla.firefox --json
+$ ./flatguard --audit all --json
 [
   {
     "appId": "org.mozilla.firefox",
@@ -271,13 +305,19 @@ $ ./flatguard --audit org.mozilla.firefox --json
       "shared": ["network", "ipc"],
       "sockets": ["x11", "wayland", "pulseaudio", "fallback-x11", "pcsc", "cups"],
       "devices": "all",
-      "files": ["xdg-config/gtk-3.0:ro", "xdg-download", "/run/.heim_org.h5l.kcm-socket", "xdg-run/speech-dispatcher:ro"]
+      "files": ["xdg-config/gtk-3.0:ro", "xdg-download", "/run/.heim_org.h5l.kcm-socket", "xdg-run/speech-dispatcher:ro", "home:ro"],
+      "persistent": [".mozilla"]
     },
     "issues": [
       {
         "ruleId": "DEV_01",
         "severity": "CRITICAL",
-        "description": "App can access all hardware devices (webcam, etc.)"
+        "description": "App has full access to all hardware devices (webcam, etc.)"
+      },
+      {
+        "ruleId": "FS_01",
+        "severity": "INFO",
+        "description": "App has read-only access to your entire home directory."
       },
       {
         "ruleId": "SOC_01",
@@ -287,7 +327,12 @@ $ ./flatguard --audit org.mozilla.firefox --json
       {
         "ruleId": "NET_01",
         "severity": "INFO",
-        "description": "App can communicate over the internet."
+        "description": "App has full network access."
+      },
+      {
+        "ruleId": "COMBO_01",
+        "severity": "WARNING",
+        "description": "App can exfiltrate personal files over the internet."
       },
       {
         "ruleId": "COMBO_03",
@@ -300,6 +345,23 @@ $ ./flatguard --audit org.mozilla.firefox --json
         "description": "App can stream webcam/microphone over the internet."
       }
     ]
+  },
+  {
+    "appId": "com.github.tchx84.Flatseal",
+    "permissions": {
+      "shared": ["ipc"],
+      "sockets": ["x11", "wayland", "fallback-x11"],
+      "devices": ["dri"],
+      "files": ["xdg-data/flatpak/overrides:create", "/var/lib/flatpak/app:ro", "xdg-data/flatpak/app:ro"],
+      "persistent": []
+    },
+    "issues": [
+      {
+        "ruleId": "SOC_01",
+        "severity": "INFO",
+        "description": "X11 protocol is insecure and allows keylogging."
+      }
+    ]
   }
 ]
 ```
@@ -307,6 +369,27 @@ $ ./flatguard --audit org.mozilla.firefox --json
 ---
 
 ## Changelog
+
+### v0.2.0 — 2026-03-10
+
+#### Added
+- **`persistent` permission support** — Flatpak `[Context] persistent=` entries are now parsed (`ini_utils.cpp`), stored in `AppPermissions`, displayed in output, and audited against 4 new rules: `PERSIST_01` (`.` — CRITICAL), `PERSIST_02` (`.config` — WARNING), `PERSIST_03` (`.ssh` — CRITICAL), `PERSIST_04` (`.gnupg` — CRITICAL).
+- **Structured filesystem permission parser** (`fs_permissions.h/cpp`) — Flatpak filesystem entries (e.g. `home:ro`, `host:create`) are now parsed into structured `FsPermission { path, FsAccess }` objects with `ReadWrite`, `ReadOnly`, and `Create` variants.
+- **Access-mode severity adjustment** — filesystem rules now account for the `:ro`/`:create` suffix: severity is downgraded one level when access is read-only (`CRITICAL→WARNING`, `WARNING→INFO`).
+- **`test_fs_permissions`** — new test binary with 13 unit tests covering all access modes, path varieties, deny prefix handling, and edge cases.
+- **`persistent` field in output** — both text and JSON output now include the `persistent` field.
+- **Deny-prefix guard in parser** — `parseFilesystemPermissions` now silently skips entries prefixed with `!` (deny tokens from override files).
+
+#### Changed
+- `FS_01` (`filesystems=home`) severity raised from `INFO` → `WARNING` — read/write home access is a meaningful risk.
+- Combo rules `COMBO_01`/`COMBO_02` severity is now `CRITICAL` when the filesystem access is writable, and `WARNING` when read-only.
+- `test_auditor` expanded from 10 → 21 test cases to cover new scenarios.
+
+#### Fixed
+- `auditor.cpp` matched raw strings against `app.filesystems`, so `"home:ro"` would never match rule pattern `"home"`. Now uses `parseFilesystemPermissions` for all filesystem rule matching.
+- Removed unused `#include <iostream>` from `auditor.cpp`.
+
+---
 
 ### v0.1.1 — 2026-03-08
 
